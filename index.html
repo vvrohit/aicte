@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AICTE Grievance Command Center</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<!-- Only theme tokens, hover states, keyframes and responsive rules live here (not expressible inline). All component styling is inline. -->
+<style>
+:root{--bg:#f3f5fb;--card:#fff;--tx:#0f172a;--mut:#64748b;--bd:#e5e9f2;--pri:#4f46e5;--pri2:#7c3aed;--soft:#f8fafc}
+[data-theme="dark"]{--bg:#0b1020;--card:#131a2e;--tx:#e5e7eb;--mut:#94a3b8;--bd:#23304d;--soft:#0f1629}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--tx)}
+.hv{transition:transform .2s ease,box-shadow .2s ease}.hv:hover{transform:translateY(-3px);box-shadow:0 14px 30px rgba(79,70,229,.15)!important}
+.nv{transition:background .15s}.nv:hover{background:rgba(255,255,255,.09)!important}
+tr.rw{cursor:pointer;transition:background .12s}tr.rw:hover{background:rgba(99,102,241,.07)}
+.sb{transition:transform .25s ease}
+@media(max-width:991px){.sb{transform:translateX(-100%)}.sb.open{transform:none}.mn{margin-left:0!important}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+.fu{animation:fadeUp .45s ease both}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.5)}50%{box-shadow:0 0 0 7px rgba(239,68,68,0)}}
+.pl{animation:pulse 1.8s infinite}
+.form-control,.form-select{background-color:var(--card);color:var(--tx);border-color:var(--bd)}
+.form-control:focus,.form-select:focus{background-color:var(--card);color:var(--tx);border-color:var(--pri);box-shadow:0 0 0 .2rem rgba(79,70,229,.15)}
+.offcanvas{background:var(--card);color:var(--tx)}
+.table{--bs-table-bg:transparent;--bs-table-color:var(--tx);--bs-table-border-color:var(--bd)}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="toast-container position-fixed bottom-0 end-0 p-3" id="toasts" style="z-index:2000"></div>
+<div class="offcanvas offcanvas-end" tabindex="-1" id="detail" style="width:560px;max-width:100vw"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+/* ============================================================
+   1. CONSTANTS & SEED DATA
+   ============================================================ */
+const DAY = 864e5;
+const BUREAUS = [
+  {id:'APB',name:'Approval Bureau',icon:'bi-patch-check',color:'#6366f1'},
+  {id:'ACB',name:'Academic Bureau',icon:'bi-mortarboard',color:'#0ea5e9'},
+  {id:'PPB',name:'Policy & Planning Bureau',icon:'bi-diagram-3',color:'#10b981'},
+  {id:'FIN',name:'Finance Bureau',icon:'bi-cash-coin',color:'#f59e0b'},
+  {id:'LGL',name:'Legal Cell',icon:'bi-bank',color:'#8b5cf6'},
+  {id:'VIG',name:'Vigilance Cell',icon:'bi-shield-exclamation',color:'#ef4444'},
+  {id:'SGC',name:'Student Grievance Cell',icon:'bi-people',color:'#ec4899'},
+  {id:'QAC',name:'Quality Assurance Cell',icon:'bi-award',color:'#14b8a6'}
+];
+const CATS = [
+  {n:'Fake Approval / Affiliation',b:'VIG',d:'Institution is allegedly running programmes without valid AICTE approval or displaying forged approval documents.'},
+  {n:'Fee Irregularity / Refund',b:'FIN',d:'Fees collected exceed the fee structure approved by the state committee and refund of fees after withdrawal is being denied.'},
+  {n:'Faculty Shortage / Qualification',b:'QAC',d:'Faculty strength is below the mandated student-teacher ratio and several faculty lack the required qualifications.'},
+  {n:'Infrastructure Deficiency',b:'QAC',d:'Laboratories, library and classroom facilities declared in the approval application are not available on campus.'},
+  {n:'Admission Irregularity',b:'APB',d:'Admissions were granted beyond sanctioned intake or without following the prescribed counselling process.'},
+  {n:'Exam / Academic Malpractice',b:'ACB',d:'Irregularities in internal assessment, exam conduct and result publication have been observed.'},
+  {n:'Student Harassment / Ragging',b:'SGC',d:'Students report harassment and ragging incidents and the institution has not constituted a functional anti-ragging committee.'},
+  {n:'Policy Violation',b:'PPB',d:'Institution is violating the norms laid down in the AICTE Approval Process Handbook.'},
+  {n:'Court / Legal Matter',b:'LGL',d:'Matter relates to a pending court case or legal notice involving the institution and AICTE.'}
+];
+const INST = [
+  ['Sri Venkateswara Institute of Technology','Andhra Pradesh'],['Greenfield College of Engineering','Karnataka'],['Maharaja Engineering College','Rajasthan'],
+  ['National Institute of Applied Sciences','Maharashtra'],['Bharathi Institute of Management','Tamil Nadu'],['Himalaya Technical Campus','Uttarakhand'],
+  ['Eastern Polytechnic Institute','West Bengal'],['Narmada School of Technology','Madhya Pradesh'],['Punjab Institute of Engineering','Punjab'],
+  ['Kerala Academy of Technology','Kerala'],['Delhi Institute of Business Studies','Delhi'],['Gujarat Technical University College','Gujarat'],
+  ['Telangana College of Pharmacy','Telangana'],['Odisha Institute of Technology','Odisha'],['Bihar Engineering Institute','Bihar'],['Lucknow School of Architecture','Uttar Pradesh']
+].map((x,i)=>({id:'AICTE-'+(1000+i*37),name:x[0],state:x[1]}));
+const SLA = {Critical:3,High:7,Medium:15,Low:30};
+const STATUSES = ['New','Assigned','In Progress','Escalated','Resolved','Closed'];
+const SC = {New:'#3b82f6',Assigned:'#6366f1','In Progress':'#f59e0b',Escalated:'#ef4444',Resolved:'#10b981',Closed:'#64748b'};
+const PC = {Critical:'#dc2626',High:'#f97316',Medium:'#eab308',Low:'#22c55e'};
+const NAMES = ['Rahul Sharma','Priya Nair','Mohammed Imran','Anjali Verma','Karthik Subramanian','Sneha Patil','Arjun Reddy','Divya Menon','Vikram Singh','Pooja Gupta','Suresh Kumar','Lakshmi Iyer'];
+const USERS = [{email:'admin@aicte.gov.in',pw:'admin123',name:'Bharathi',role:'Super Admin',title:'Chairman Office',bureau:null}]
+  .concat(BUREAUS.map(b=>({email:b.id.toLowerCase()+'@aicte.gov.in',pw:'officer123',name:b.name+' Officer',role:'Bureau Officer',title:b.name,bureau:b.id})));
+
+const bu = id => BUREAUS.find(b=>b.id===id);
+function rng(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const pick=(arr,r)=>arr[Math.floor(r()*arr.length)];
+
+function seed(){
+  const r = rng(2026), now = Date.now(), cases = [];
+  for(let i=1;i<=64;i++){
+    const age = Math.floor(r()*140), created = now-age*DAY-Math.floor(r()*DAY*.9);
+    const cat = pick(CATS,r), inst = pick(INST,r);
+    const pr = pick(['Critical','High','High','Medium','Medium','Medium','Low'],r);
+    const bureau = r()<.12 ? pick(BUREAUS,r).id : cat.b;
+    const due = created+SLA[pr]*DAY, x = r();
+    let status;
+    if(age>60) status = x<.7?'Closed':x<.9?'Resolved':'In Progress';
+    else if(age>20) status = x<.35?'Resolved':x<.6?'In Progress':x<.75?'Escalated':'Assigned';
+    else status = x<.3?'New':x<.55?'Assigned':x<.85?'In Progress':'Escalated';
+    const tl = [{t:created,by:'System',action:'Complaint registered',note:'Case logged via public portal'}];
+    if(status!=='New') tl.push({t:created+36e5*2,by:'Auto-Router',action:'Assigned to '+bu(bureau).name,note:'Routed by category rules'});
+    if(['In Progress','Escalated','Resolved','Closed'].includes(status)) tl.push({t:created+DAY,by:bu(bureau).name+' Officer',action:'Status changed to In Progress',note:'Preliminary scrutiny started'});
+    if(status==='Escalated') tl.push({t:created+DAY*3,by:bu(bureau).name+' Officer',action:'Status changed to Escalated',note:'Escalated to Chairman Office for review'});
+    let resolvedAt = null;
+    if(status==='Resolved'||status==='Closed'){
+      resolvedAt = created+Math.min(SLA[pr]*(.3+r()*1.3)*DAY, age*DAY*.95+DAY);
+      tl.push({t:resolvedAt,by:bu(bureau).name+' Officer',action:'Status changed to Resolved',note:'Action taken report filed'});
+      if(status==='Closed') tl.push({t:resolvedAt+2*DAY,by:'Super Admin',action:'Status changed to Closed',note:'Closed after verification'});
+    }
+    cases.push({id:'AICTE/GRV/2026/'+String(i).padStart(5,'0'),complainant:pick(NAMES,r),email:'complainant'+i+'@mail.in',phone:'9'+String(Math.floor(r()*1e9)).padStart(9,'0'),
+      instId:inst.id,instName:inst.name,state:inst.state,category:cat.n,priority:pr,bureau,status,
+      subject:cat.n+' at '+inst.name,description:cat.d,created,due,resolvedAt,timeline:tl});
+  }
+  const audit=[]; cases.forEach(c=>c.timeline.forEach(e=>audit.push({t:e.t,user:e.by,action:e.action,caseId:c.id})));
+  audit.sort((a,b)=>b.t-a.t);
+  return {cases,audit:audit.slice(0,300),counter:65};
+}
+
+/* ============================================================
+   2. MOCK BACKEND  (REST-style API over localStorage "database")
+   In production each method maps 1:1 to an Express/Spring endpoint.
+   ============================================================ */
+const KEY='aicte_cms_demo_v2';
+let DB = JSON.parse(localStorage.getItem(KEY)||'null') || seed();
+const persist=()=>localStorage.setItem(KEY,JSON.stringify(DB));
+persist();
+const wait=(ms=140)=>new Promise(r=>setTimeout(r,ms));
+const API = {
+  async login(email,pw){await wait(500);const u=USERS.find(u=>u.email===email.trim().toLowerCase()&&u.pw===pw);if(!u)throw new Error('Invalid email or password');return {...u};},          // POST /api/auth/login
+  async cases(user){await wait();return DB.cases.filter(c=>!user.bureau||c.bureau===user.bureau);},                                                                      // GET  /api/cases (RBAC scoped)
+  async allCasesPublic(id){await wait(350);return DB.cases.find(c=>c.id.toLowerCase()===id.trim().toLowerCase())||null;},                                                 // GET  /api/track/:id
+  async audit(){await wait();return DB.audit;},                                                                                                                          // GET  /api/audit
+  async create(d,user){                                                                                                                                                  // POST /api/cases
+    await wait(450);const cat=CATS.find(c=>c.n===d.category),inst=INST.find(i=>i.id===d.instId),now=Date.now();
+    const c={id:'AICTE/GRV/2026/'+String(DB.counter++).padStart(5,'0'),complainant:d.name,email:d.email,phone:d.phone,instId:inst.id,instName:inst.name,state:inst.state,
+      category:d.category,priority:d.priority,bureau:cat.b,status:'Assigned',subject:d.subject,description:d.description,created:now,due:now+SLA[d.priority]*DAY,resolvedAt:null,
+      timeline:[{t:now,by:user?user.name:'Public Portal',action:'Complaint registered',note:'Case logged'},{t:now+1,by:'Auto-Router',action:'Assigned to '+bu(cat.b).name,note:'Routed by category rules'}]};
+    DB.cases.unshift(c);DB.audit.unshift({t:now,user:c.timeline[0].by,action:'Complaint registered',caseId:c.id});persist();return c;
+  },
+  async update(id,p,user){                                                                                                                                               // PATCH /api/cases/:id
+    await wait(350);const c=DB.cases.find(x=>x.id===id),now=Date.now();
+    if(p.bureau&&p.bureau!==c.bureau){const from=bu(c.bureau).name;c.bureau=p.bureau;c.timeline.push({t:now,by:user.name,action:'Forwarded: '+from+' → '+bu(p.bureau).name,note:p.remark||'Forwarded for jurisdictional action'});DB.audit.unshift({t:now,user:user.name,action:'Forwarded to '+bu(p.bureau).name,caseId:id});}
+    if(p.status&&p.status!==c.status){c.status=p.status;if(p.status==='Resolved')c.resolvedAt=now;c.timeline.push({t:now,by:user.name,action:'Status changed to '+p.status,note:p.remark||'—'});DB.audit.unshift({t:now,user:user.name,action:'Status → '+p.status,caseId:id});}
+    else if(p.remark&&!(p.bureau&&p.bureau!==c.bureau)){c.timeline.push({t:now,by:user.name,action:'Remark added',note:p.remark});DB.audit.unshift({t:now,user:user.name,action:'Remark added',caseId:id});}
+    persist();return c;
+  },
+  async reset(){DB=seed();persist();}
+};
+
+/* ============================================================
+   3. HELPERS
+   ============================================================ */
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const fd=t=>new Date(t).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+const fdt=t=>new Date(t).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+const isOpen=c=>!['Resolved','Closed'].includes(c.status);
+const isOver=c=>isOpen(c)&&c.due<Date.now();
+const badge=(t,col)=>`<span style="background:${col}1a;color:${col};border:1px solid ${col}40;padding:.28rem .62rem;border-radius:999px;font-size:.72rem;font-weight:600;white-space:nowrap;display:inline-block">${esc(t)}</span>`;
+const sla=c=>{if(!isOpen(c))return `<span style="color:#10b981;font-size:.78rem;font-weight:600"><i class="bi bi-check-circle-fill"></i> Met</span>`;const d=(c.due-Date.now())/DAY;
+  if(d<0)return `<span style="color:#ef4444;font-size:.78rem;font-weight:700"><i class="bi bi-exclamation-octagon-fill"></i> ${Math.ceil(-d)}d overdue</span>`;
+  return `<span style="color:${d<=2?'#f59e0b':'#64748b'};font-size:.78rem;font-weight:600"><i class="bi bi-clock"></i> ${Math.ceil(d)}d left</span>`;};
+const CARD='background:var(--card);border:1px solid var(--bd);border-radius:18px;box-shadow:0 4px 18px rgba(15,23,42,.05)';
+const LBL='font-size:.78rem;font-weight:600;color:var(--mut);text-transform:uppercase;letter-spacing:.05em';
+const avgDays=arr=>{const r=arr.filter(c=>c.resolvedAt);return r.length?(r.reduce((s,c)=>s+(c.resolvedAt-c.created),0)/r.length/DAY):0;};
+function toast(msg,type='success'){const col={success:'#10b981',danger:'#ef4444',info:'#4f46e5'}[type];const el=document.createElement('div');
+  el.className='toast show align-items-center border-0';el.style.cssText=`background:var(--card);color:var(--tx);border-left:5px solid ${col}!important;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.18)`;
+  el.innerHTML=`<div class="d-flex"><div class="toast-body fw-semibold" style="font-size:.9rem">${msg}</div><button class="btn-close me-2 m-auto" data-bs-dismiss="toast"></button></div>`;
+  $('#toasts').appendChild(el);setTimeout(()=>el.remove(),3800);}
+const spinner=`<div class="d-flex justify-content-center align-items-center" style="height:60vh"><div class="spinner-border" style="color:var(--pri);width:3rem;height:3rem"></div></div>`;
+const charts={};
+function mk(id,cfg){if(charts[id])charts[id].destroy();const el=document.getElementById(id);if(!el)return;
+  Chart.defaults.color=getComputedStyle(document.documentElement).getPropertyValue('--mut').trim()||'#64748b';Chart.defaults.font.family='Inter';
+  charts[id]=new Chart(el,cfg);}
+const pageHead=(t,s,right='')=>`<div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4 fu"><div><h2 style="font-weight:800;letter-spacing:-.02em;margin:0;font-size:1.65rem">${t}</h2><div style="color:var(--mut);margin-top:.25rem">${s}</div></div><div>${right}</div></div>`;
+
+/* ============================================================
+   4. STATE & ROUTER
+   ============================================================ */
+let user=null,view='dashboard',F={q:'',bureau:'',status:'',priority:'',inst:'',page:1,sort:'created',dir:-1};
+const NAV=[['dashboard','bi-grid-1x2-fill','Dashboard'],['cases','bi-folder2-open','All Cases'],['register','bi-plus-circle-fill','Register Complaint'],['bureaus','bi-buildings','Bureaus & Cells'],
+  ['institutions','bi-bank2','Institution Risk'],['reports','bi-bar-chart-line-fill','Reports'],['track','bi-search','Track Complaint'],['audit','bi-journal-text','Audit Trail']];
+
+function go(v,opts){view=v;if(opts)Object.assign(F,opts);document.getElementById('sb')?.classList.remove('open');drawShell();}
+
+/* ============================================================
+   5. LOGIN
+   ============================================================ */
+function drawLogin(){
+  $('#app').innerHTML=`
+  <div class="d-flex flex-column flex-lg-row" style="min-height:100vh">
+    <div class="d-flex flex-column justify-content-between p-4 p-lg-5 text-white" style="flex:1.15;background:radial-gradient(circle at 20% 15%,#6d5dfc 0,#3b2fb5 40%,#1b1464 100%);position:relative;overflow:hidden">
+      <div style="position:absolute;right:-120px;bottom:-120px;width:420px;height:420px;border-radius:50%;background:rgba(255,255,255,.06)"></div>
+      <div style="position:absolute;right:80px;top:-90px;width:240px;height:240px;border-radius:50%;background:rgba(255,255,255,.05)"></div>
+      <div class="d-flex align-items-center gap-3" style="z-index:1"><div style="width:48px;height:48px;border-radius:14px;background:rgba(255,255,255,.18);display:grid;place-items:center;font-size:1.5rem"><i class="bi bi-mortarboard-fill"></i></div>
+        <div><div style="font-weight:800;font-size:1.15rem;line-height:1.1">AICTE</div><div style="font-size:.78rem;opacity:.8">All India Council for Technical Education</div></div></div>
+      <div style="z-index:1" class="my-5">
+        <span style="background:rgba(255,255,255,.16);padding:.4rem .9rem;border-radius:99px;font-size:.78rem;font-weight:600">SIH 2026 · Problem ID SIH26264</span>
+        <h1 style="font-weight:800;font-size:clamp(2rem,4vw,3.2rem);letter-spacing:-.03em;line-height:1.1;margin:1.1rem 0">Grievance<br>Command Center</h1>
+        <p style="max-width:480px;opacity:.88;font-size:1.05rem">One integrated dashboard to register, route, monitor and resolve institution-related complaints across every AICTE bureau and cell — with SLA tracking and full transparency.</p>
+        <div class="d-flex flex-wrap gap-4 mt-4" style="font-size:.9rem"><div><i class="bi bi-diagram-3-fill me-1"></i>Smart routing</div><div><i class="bi bi-stopwatch-fill me-1"></i>SLA engine</div><div><i class="bi bi-shield-lock-fill me-1"></i>Role-based access</div></div>
+      </div>
+      <div style="z-index:1;font-size:.8rem;opacity:.7">Demo build · Data is simulated and stored in your browser</div>
+    </div>
+    <div class="d-flex align-items-center justify-content-center p-4" style="flex:1;background:var(--bg)">
+      <div class="fu" style="${CARD};width:100%;max-width:430px;padding:2rem">
+        <h3 style="font-weight:800;margin:0">Welcome back</h3><div style="color:var(--mut);margin-bottom:1.4rem">Sign in to your official account</div>
+        <form id="lf" novalidate>
+          <label style="${LBL}">Official email</label><input id="em" class="form-control form-control-lg mb-3 mt-1" style="border-radius:12px;font-size:.95rem" value="admin@aicte.gov.in">
+          <label style="${LBL}">Password</label><input id="pw" type="password" class="form-control form-control-lg mb-2 mt-1" style="border-radius:12px;font-size:.95rem" value="admin123">
+          <div id="lerr" style="color:#ef4444;font-size:.85rem;min-height:1.3rem"></div>
+          <button class="btn btn-lg w-100 text-white mt-1" id="lb" style="background:linear-gradient(135deg,var(--pri),var(--pri2));border:0;border-radius:12px;font-weight:700;padding:.8rem">Sign in <i class="bi bi-arrow-right ms-1"></i></button>
+        </form>
+        <hr style="border-color:var(--bd);margin:1.5rem 0 1rem">
+        <div style="${LBL};margin-bottom:.6rem">Quick demo logins</div>
+        <div class="d-flex flex-wrap gap-2">
+          <button class="btn btn-sm dl" data-e="admin@aicte.gov.in" data-p="admin123" style="border:1px solid var(--bd);border-radius:10px;color:var(--tx);font-weight:600"><i class="bi bi-person-badge me-1"></i>Super Admin</button>
+          <button class="btn btn-sm dl" data-e="apb@aicte.gov.in" data-p="officer123" style="border:1px solid var(--bd);border-radius:10px;color:var(--tx);font-weight:600"><i class="bi bi-patch-check me-1"></i>Approval Bureau</button>
+          <button class="btn btn-sm dl" data-e="vig@aicte.gov.in" data-p="officer123" style="border:1px solid var(--bd);border-radius:10px;color:var(--tx);font-weight:600"><i class="bi bi-shield-exclamation me-1"></i>Vigilance Cell</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+  document.querySelectorAll('.dl').forEach(b=>b.onclick=()=>{$('#em').value=b.dataset.e;$('#pw').value=b.dataset.p;});
+  $('#lf').onsubmit=async e=>{e.preventDefault();const btn=$('#lb');btn.disabled=true;btn.innerHTML='<span class="spinner-border spinner-border-sm me-2"></span>Verifying…';$('#lerr').textContent='';
+    try{user=await API.login($('#em').value,$('#pw').value);sessionStorage.setItem('u',JSON.stringify(user));view='dashboard';drawShell();toast('Signed in as <b>'+esc(user.name)+'</b>');}
+    catch(err){$('#lerr').innerHTML='<i class="bi bi-x-circle-fill me-1"></i>'+err.message;btn.disabled=false;btn.innerHTML='Sign in <i class="bi bi-arrow-right ms-1"></i>';}};
+}
+
+/* ============================================================
+   6. SHELL (sidebar + topbar)
+   ============================================================ */
+function drawShell(){
+  const items=NAV.filter(n=>n[0]!=='audit'||user.role==='Super Admin');
+  $('#app').innerHTML=`
+  <aside id="sb" class="sb" style="position:fixed;top:0;left:0;bottom:0;width:262px;background:linear-gradient(180deg,#1e1b4b,#14123a);color:#fff;z-index:1040;display:flex;flex-direction:column;padding:1.2rem .9rem">
+    <div class="d-flex align-items-center gap-2 px-2 mb-4"><div style="width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#818cf8,#c084fc);display:grid;place-items:center;font-size:1.2rem"><i class="bi bi-mortarboard-fill"></i></div>
+      <div><div style="font-weight:800;line-height:1.1">AICTE</div><div style="font-size:.7rem;opacity:.65">Grievance Command Center</div></div></div>
+    <nav class="flex-grow-1" style="overflow:auto">${items.map(n=>`<a href="#" class="nv d-flex align-items-center gap-3 text-decoration-none mb-1" data-v="${n[0]}" style="padding:.7rem .9rem;border-radius:12px;color:${view===n[0]?'#fff':'rgba(255,255,255,.7)'};font-weight:${view===n[0]?700:500};font-size:.92rem;background:${view===n[0]?'linear-gradient(135deg,rgba(129,140,248,.45),rgba(192,132,252,.3))':'transparent'}"><i class="bi ${n[1]}" style="font-size:1.05rem"></i>${n[2]}</a>`).join('')}</nav>
+    <div style="background:rgba(255,255,255,.07);border-radius:14px;padding:.8rem" class="d-flex align-items-center gap-2">
+      <div style="width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#f472b6,#818cf8);display:grid;place-items:center;font-weight:700">${esc(user.name[0])}</div>
+      <div style="min-width:0;flex:1"><div style="font-size:.83rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(user.name)}</div><div style="font-size:.7rem;opacity:.65">${esc(user.role)}</div></div>
+      <button id="lo" title="Sign out" class="btn btn-sm text-white" style="opacity:.8"><i class="bi bi-box-arrow-right"></i></button>
+    </div>
+  </aside>
+  <div class="mn" style="margin-left:262px;min-height:100vh">
+    <header style="position:sticky;top:0;z-index:1030;background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:blur(12px);border-bottom:1px solid var(--bd);padding:.8rem 1.5rem" class="d-flex align-items-center gap-3">
+      <button id="mt" class="btn d-lg-none" style="border:1px solid var(--bd);color:var(--tx)"><i class="bi bi-list"></i></button>
+      <div class="flex-grow-1 position-relative" style="max-width:460px"><i class="bi bi-search position-absolute" style="left:14px;top:50%;transform:translateY(-50%);color:var(--mut)"></i>
+        <input id="gs" class="form-control" placeholder="Quick search: case ID, institution, complainant…" style="padding-left:2.4rem;border-radius:12px"></div>
+      <span class="d-none d-md-inline" style="background:${user.bureau?bu(user.bureau).color+'22':'#4f46e522'};color:${user.bureau?bu(user.bureau).color:'#4f46e5'};padding:.4rem .8rem;border-radius:99px;font-size:.78rem;font-weight:700"><i class="bi bi-eye me-1"></i>${user.bureau?esc(bu(user.bureau).name):'All Bureaus'}</span>
+      <button id="th" class="btn" title="Toggle theme" style="border:1px solid var(--bd);color:var(--tx);border-radius:12px"><i class="bi ${document.documentElement.dataset.theme==='dark'?'bi-sun-fill':'bi-moon-stars-fill'}"></i></button>
+    </header>
+    <main id="view" style="padding:1.6rem"></main>
+  </div>`;
+  document.querySelectorAll('[data-v]').forEach(a=>a.onclick=e=>{e.preventDefault();go(a.dataset.v,{page:1});});
+  $('#lo').onclick=()=>{user=null;sessionStorage.removeItem('u');drawLogin();};
+  $('#mt').onclick=()=>$('#sb').classList.toggle('open');
+  $('#th').onclick=()=>{const d=document.documentElement.dataset.theme==='dark'?'light':'dark';document.documentElement.dataset.theme=d;document.documentElement.dataset.bsTheme=d;localStorage.setItem('theme',d);drawShell();};
+  $('#gs').onkeydown=e=>{if(e.key==='Enter'){go('cases',{q:e.target.value,bureau:'',status:'',priority:'',inst:'',page:1});}};
+  ({dashboard:vDash,cases:vCases,register:vReg,bureaus:vBur,institutions:vInst,reports:vRep,track:vTrack,audit:vAudit})[view]();
+}
+
+/* ============================================================
+   7. DASHBOARD
+   ============================================================ */
+async function vDash(){
+  $('#view').innerHTML=spinner;const cs=await API.cases(user);const au=(await API.audit()).slice(0,60);
+  const open=cs.filter(isOpen),over=cs.filter(isOver),res=cs.filter(c=>!isOpen(c)),esc_=cs.filter(c=>c.status==='Escalated');
+  const kpi=[['Total Cases',cs.length,'bi-collection-fill','#6366f1','All time',()=>go('cases',{status:'',bureau:'',priority:'',inst:'',q:'',page:1})],
+    ['Open Cases',open.length,'bi-hourglass-split','#f59e0b','Needs action',()=>go('cases',{status:'',page:1})],
+    ['Resolved',res.length,'bi-check2-circle','#10b981',Math.round(res.length/Math.max(cs.length,1)*100)+'% resolution rate',()=>go('cases',{status:'Resolved',page:1})],
+    ['Escalated',esc_.length,'bi-arrow-up-right-circle-fill','#ef4444','Chairman review',()=>go('cases',{status:'Escalated',page:1})],
+    ['SLA Breached',over.length,'bi-alarm-fill','#dc2626','Overdue cases',()=>go('cases',{status:'Overdue',page:1})],
+    ['Avg. Resolution',avgDays(cs).toFixed(1)+'d','bi-speedometer2','#0ea5e9','Days to resolve',()=>go('reports')]];
+  $('#view').innerHTML=pageHead('Good '+(new Date().getHours()<12?'morning':new Date().getHours()<17?'afternoon':'evening')+', '+esc(user.name.split(' ')[0]===user.name?user.name:user.name.split(' ').slice(0,2).join(' ')),
+    'Live overview of institution complaints — '+new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'}),
+    `<button class="btn text-white" id="nc" style="background:linear-gradient(135deg,var(--pri),var(--pri2));border:0;border-radius:12px;font-weight:600"><i class="bi bi-plus-lg me-1"></i>New Complaint</button>`)+`
+  <div class="row g-3 mb-4">${kpi.map((k,i)=>`<div class="col-6 col-md-4 col-xl-2 fu" style="animation-delay:${i*60}ms"><div class="hv kp" data-i="${i}" style="${CARD};padding:1.1rem;cursor:pointer;height:100%">
+    <div class="d-flex justify-content-between align-items-start"><div style="width:42px;height:42px;border-radius:12px;background:${k[3]}1f;color:${k[3]};display:grid;place-items:center;font-size:1.2rem"><i class="bi ${k[2]}"></i></div></div>
+    <div style="font-size:1.9rem;font-weight:800;letter-spacing:-.02em;margin-top:.7rem;line-height:1">${k[1]}</div>
+    <div style="font-weight:600;font-size:.85rem;margin-top:.3rem">${k[0]}</div><div style="color:var(--mut);font-size:.74rem">${k[4]}</div></div></div>`).join('')}</div>
+  <div class="row g-3 mb-3">
+    <div class="col-lg-4"><div style="${CARD};padding:1.3rem;height:100%"><div style="font-weight:700;margin-bottom:1rem">Cases by Status</div><div style="height:260px"><canvas id="c1"></canvas></div></div></div>
+    <div class="col-lg-8"><div style="${CARD};padding:1.3rem;height:100%"><div style="font-weight:700;margin-bottom:1rem">Complaints Received vs Resolved <span style="color:var(--mut);font-weight:500;font-size:.8rem">· last 6 months</span></div><div style="height:260px"><canvas id="c2"></canvas></div></div></div>
+  </div>
+  <div class="row g-3 mb-3">
+    <div class="col-lg-7"><div style="${CARD};padding:1.3rem;height:100%"><div style="font-weight:700;margin-bottom:1rem">Bureau-wise Workload</div><div style="height:290px"><canvas id="c3"></canvas></div></div></div>
+    <div class="col-lg-5"><div style="${CARD};padding:1.3rem;height:100%">
+      <div class="d-flex justify-content-between mb-3"><div style="font-weight:700"><span class="pl" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#ef4444;margin-right:.5rem"></span>SLA Breach Alerts</div><a href="#" id="va" style="font-size:.82rem;text-decoration:none;color:var(--pri);font-weight:600">View all</a></div>
+      ${over.sort((a,b)=>a.due-b.due).slice(0,5).map(c=>`<div class="rw2 d-flex align-items-center gap-3 mb-2" data-id="${c.id}" style="padding:.7rem;border-radius:12px;background:var(--soft);border:1px solid var(--bd);cursor:pointer">
+        <div style="width:6px;align-self:stretch;border-radius:4px;background:${PC[c.priority]}"></div><div style="min-width:0;flex:1"><div style="font-weight:600;font-size:.84rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(c.instName)}</div><div style="font-size:.74rem;color:var(--mut)">${esc(c.category)}</div></div><div class="text-end">${sla(c)}<div style="font-size:.7rem;color:var(--mut)">${esc(bu(c.bureau).id)}</div></div></div>`).join('')||'<div style="color:var(--mut)">No SLA breaches 🎉</div>'}
+    </div></div>
+  </div>
+  <div style="${CARD};padding:1.3rem"><div style="font-weight:700;margin-bottom:1rem">Recent Activity</div><div class="row g-2">
+    ${au.filter(a=>cs.some(c=>c.id===a.caseId)).slice(0,8).map(a=>`<div class="col-md-6"><div class="d-flex gap-3 align-items-start" style="padding:.6rem;border-radius:12px"><div style="width:34px;height:34px;border-radius:10px;background:#6366f11f;color:#6366f1;display:grid;place-items:center;flex:none"><i class="bi bi-lightning-charge-fill"></i></div>
+    <div><div style="font-size:.86rem;font-weight:600">${esc(a.action)}</div><div style="font-size:.74rem;color:var(--mut)">${esc(a.caseId)} · ${esc(a.user)} · ${fdt(a.t)}</div></div></div></div>`).join('')}</div></div>`;
+  $('#nc').onclick=()=>go('register');$('#va').onclick=e=>{e.preventDefault();go('cases',{status:'Overdue',page:1});};
+  document.querySelectorAll('.kp').forEach(el=>el.onclick=kpi[el.dataset.i][5]);
+  document.querySelectorAll('.rw2').forEach(el=>el.onclick=()=>openCase(el.dataset.id));
+  mk('c1',{type:'doughnut',data:{labels:STATUSES,datasets:[{data:STATUSES.map(s=>cs.filter(c=>c.status===s).length),backgroundColor:STATUSES.map(s=>SC[s]),borderWidth:0,hoverOffset:8}]},options:{maintainAspectRatio:false,cutout:'68%',plugins:{legend:{position:'bottom',labels:{usePointStyle:true,boxWidth:8,padding:12}}}}});
+  const months=[...Array(6)].map((_,i)=>{const d=new Date();d.setDate(1);d.setMonth(d.getMonth()-5+i);return d;});
+  const inM=(t,d)=>{const x=new Date(t);return x.getMonth()===d.getMonth()&&x.getFullYear()===d.getFullYear();};
+  mk('c2',{type:'line',data:{labels:months.map(d=>d.toLocaleString('en-IN',{month:'short'})),datasets:[
+    {label:'Received',data:months.map(d=>cs.filter(c=>inM(c.created,d)).length),borderColor:'#6366f1',backgroundColor:'rgba(99,102,241,.15)',fill:true,tension:.4,borderWidth:3,pointRadius:4},
+    {label:'Resolved',data:months.map(d=>cs.filter(c=>c.resolvedAt&&inM(c.resolvedAt,d)).length),borderColor:'#10b981',backgroundColor:'rgba(16,185,129,.12)',fill:true,tension:.4,borderWidth:3,pointRadius:4}]},
+    options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{position:'top',align:'end',labels:{usePointStyle:true,boxWidth:8}}},scales:{y:{beginAtZero:true,grid:{color:'rgba(148,163,184,.15)'}},x:{grid:{display:false}}}}});
+  const bl=BUREAUS.filter(b=>!user.bureau||b.id===user.bureau);
+  mk('c3',{type:'bar',data:{labels:bl.map(b=>b.name.replace(' Bureau','').replace(' Cell','')),datasets:[
+    {label:'Open',data:bl.map(b=>cs.filter(c=>c.bureau===b.id&&isOpen(c)).length),backgroundColor:'#f59e0b',borderRadius:6},
+    {label:'Overdue',data:bl.map(b=>cs.filter(c=>c.bureau===b.id&&isOver(c)).length),backgroundColor:'#ef4444',borderRadius:6},
+    {label:'Resolved',data:bl.map(b=>cs.filter(c=>c.bureau===b.id&&!isOpen(c)).length),backgroundColor:'#10b981',borderRadius:6}]},
+    options:{maintainAspectRatio:false,plugins:{legend:{position:'top',align:'end',labels:{usePointStyle:true,boxWidth:8}}},scales:{y:{beginAtZero:true,grid:{color:'rgba(148,163,184,.15)'}},x:{grid:{display:false}}}}});
+}
+
+/* ============================================================
+   8. CASE LIST
+   ============================================================ */
+async function vCases(){
+  $('#view').innerHTML=spinner;const all=await API.cases(user);
+  $('#view').innerHTML=pageHead('Complaint Cases','Search, filter and manage every complaint in your jurisdiction',
+    `<button class="btn" id="ex" style="border:1px solid var(--bd);color:var(--tx);border-radius:12px;font-weight:600"><i class="bi bi-download me-1"></i>Export CSV</button>`)+`
+  <div style="${CARD};padding:1rem;margin-bottom:1rem" class="fu"><div class="row g-2">
+    <div class="col-lg-4"><input id="fq" class="form-control" placeholder="Search ID, institution, complainant, category…" value="${esc(F.q)}"></div>
+    <div class="col-6 col-lg-2"><select id="fb" class="form-select"><option value="">All bureaus</option>${BUREAUS.filter(b=>!user.bureau||b.id===user.bureau).map(b=>`<option value="${b.id}" ${F.bureau===b.id?'selected':''}>${b.name}</option>`).join('')}</select></div>
+    <div class="col-6 col-lg-2"><select id="fs" class="form-select"><option value="">All status</option>${STATUSES.map(s=>`<option ${F.status===s?'selected':''}>${s}</option>`).join('')}<option ${F.status==='Overdue'?'selected':''}>Overdue</option></select></div>
+    <div class="col-6 col-lg-2"><select id="fp" class="form-select"><option value="">All priority</option>${Object.keys(PC).map(s=>`<option ${F.priority===s?'selected':''}>${s}</option>`).join('')}</select></div>
+    <div class="col-6 col-lg-2"><button id="fr" class="btn w-100" style="border:1px solid var(--bd);color:var(--tx)"><i class="bi bi-arrow-counterclockwise me-1"></i>Reset</button></div></div>
+    ${F.inst?`<div class="mt-2">${badge('Institution: '+(INST.find(i=>i.id===F.inst)||{}).name,'#6366f1')}</div>`:''}</div>
+  <div style="${CARD};overflow:hidden" class="fu"><div class="table-responsive"><table class="table align-middle mb-0" style="font-size:.86rem"><thead style="background:var(--soft)"><tr>
+    ${[['id','Case ID'],['instName','Institution'],['category','Category'],['bureau','Bureau'],['priority','Priority'],['status','Status'],['due','SLA'],['','']].map(h=>`<th class="srt" data-k="${h[0]}" style="${LBL};padding:.9rem 1rem;cursor:${h[0]?'pointer':'default'};white-space:nowrap">${h[1]}${F.sort===h[0]?(F.dir>0?' ▲':' ▼'):''}</th>`).join('')}</tr></thead><tbody id="tb"></tbody></table></div>
+    <div id="pg" class="d-flex flex-wrap justify-content-between align-items-center p-3" style="border-top:1px solid var(--bd)"></div></div>`;
+  const draw=()=>{
+    let r=all.filter(c=>(!F.q||(c.id+c.instName+c.complainant+c.category+c.state).toLowerCase().includes(F.q.toLowerCase()))&&(!F.bureau||c.bureau===F.bureau)&&(!F.priority||c.priority===F.priority)&&(!F.inst||c.instId===F.inst)&&
+      (!F.status||(F.status==='Overdue'?isOver(c):c.status===F.status)));
+    const po={Critical:0,High:1,Medium:2,Low:3};
+    r.sort((a,b)=>{let x=a[F.sort],y=b[F.sort];if(F.sort==='priority'){x=po[x];y=po[y];}return (x>y?1:x<y?-1:0)*F.dir;});
+    const per=10,pages=Math.max(1,Math.ceil(r.length/per));F.page=Math.min(F.page,pages);const s=r.slice((F.page-1)*per,F.page*per);
+    $('#tb').innerHTML=s.map(c=>`<tr class="rw" data-id="${c.id}"><td style="padding:.9rem 1rem;font-weight:700;color:var(--pri);white-space:nowrap">${c.id.split('/').slice(-1)[0]}<div style="font-size:.7rem;color:var(--mut);font-weight:500">${fd(c.created)}</div></td>
+      <td style="max-width:230px"><div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(c.instName)}</div><div style="font-size:.74rem;color:var(--mut)">${esc(c.state)}</div></td>
+      <td style="max-width:190px;font-size:.82rem">${esc(c.category)}</td>
+      <td><span style="color:${bu(c.bureau).color};font-weight:600;font-size:.82rem"><i class="bi ${bu(c.bureau).icon} me-1"></i>${c.bureau}</span></td>
+      <td>${badge(c.priority,PC[c.priority])}</td><td>${badge(c.status,SC[c.status])}</td><td>${sla(c)}</td>
+      <td><i class="bi bi-chevron-right" style="color:var(--mut)"></i></td></tr>`).join('')||`<tr><td colspan="8" class="text-center py-5" style="color:var(--mut)"><i class="bi bi-inbox" style="font-size:2rem"></i><div>No cases match your filters</div></td></tr>`;
+    $('#pg').innerHTML=`<div style="color:var(--mut);font-size:.84rem">Showing ${r.length?(F.page-1)*per+1:0}–${Math.min(F.page*per,r.length)} of ${r.length} cases</div>
+      <div class="d-flex gap-1">${[...Array(pages)].map((_,i)=>`<button class="btn btn-sm pb" data-p="${i+1}" style="min-width:36px;border-radius:9px;border:1px solid var(--bd);${F.page===i+1?'background:var(--pri);color:#fff;border-color:var(--pri)':'color:var(--tx)'}">${i+1}</button>`).join('')}</div>`;
+    document.querySelectorAll('.pb').forEach(b=>b.onclick=()=>{F.page=+b.dataset.p;draw();});
+    document.querySelectorAll('tr.rw').forEach(t=>t.onclick=()=>openCase(t.dataset.id));
+    window._rows=r;};
+  draw();
+  const bind=(id,k)=>$(id).oninput=e=>{F[k]=e.target.value;F.page=1;draw();};bind('#fq','q');bind('#fb','bureau');bind('#fs','status');bind('#fp','priority');
+  $('#fr').onclick=()=>{Object.assign(F,{q:'',bureau:'',status:'',priority:'',inst:'',page:1});vCases();};
+  document.querySelectorAll('.srt').forEach(h=>h.onclick=()=>{if(!h.dataset.k)return;F.dir=F.sort===h.dataset.k?-F.dir:1;F.sort=h.dataset.k;vCases();});
+  $('#ex').onclick=()=>exportCSV(window._rows);
+}
+function exportCSV(rows){const h=['Case ID','Institution','State','Category','Bureau','Priority','Status','Registered','Due','Resolved'];
+  const l=rows.map(c=>[c.id,c.instName,c.state,c.category,bu(c.bureau).name,c.priority,c.status,fd(c.created),fd(c.due),c.resolvedAt?fd(c.resolvedAt):''].map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(','));
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([[h.join(','),...l].join('\n')],{type:'text/csv'}));a.download='aicte_complaints.csv';a.click();toast('Exported '+rows.length+' cases to CSV','info');}
+
+/* ============================================================
+   9. CASE DETAIL (offcanvas)
+   ============================================================ */
+async function openCase(id){
+  const c=(await API.cases(user)).find(x=>x.id===id)||await API.allCasesPublic(id);const oc=bootstrap.Offcanvas.getOrCreateInstance('#detail');
+  const canEdit=user.role==='Super Admin'||user.bureau===c.bureau;
+  const total=c.due-c.created,used=Math.min((c.resolvedAt||Date.now())-c.created,total*1.5),pct=Math.min(100,Math.round(used/total*100));
+  const barCol=!isOpen(c)?'#10b981':pct>=100?'#ef4444':pct>75?'#f59e0b':'#6366f1';
+  $('#detail').innerHTML=`
+  <div style="padding:1.4rem;background:linear-gradient(135deg,#312e81,#6d28d9);color:#fff"><div class="d-flex justify-content-between"><div style="font-size:.8rem;opacity:.8">${esc(c.id)}</div><button class="btn-close btn-close-white" data-bs-dismiss="offcanvas"></button></div>
+    <h5 style="font-weight:800;margin:.5rem 0 .8rem">${esc(c.subject)}</h5><div class="d-flex flex-wrap gap-2">${badge(c.priority,'#ffffff').replace('color:#ffffff','color:#fff')}${badge(c.status,'#ffffff')}<span style="background:#ffffff26;padding:.28rem .62rem;border-radius:99px;font-size:.72rem;font-weight:600"><i class="bi ${bu(c.bureau).icon} me-1"></i>${esc(bu(c.bureau).name)}</span></div></div>
+  <div class="offcanvas-body" style="padding:1.4rem">
+    <div style="${CARD};padding:1rem;margin-bottom:1rem"><div class="d-flex justify-content-between mb-2"><span style="${LBL}">SLA progress</span>${sla(c)}</div>
+      <div style="height:10px;background:var(--bd);border-radius:99px;overflow:hidden"><div style="width:${pct}%;height:100%;background:${barCol};border-radius:99px;transition:width .8s"></div></div>
+      <div class="d-flex justify-content-between mt-2" style="font-size:.74rem;color:var(--mut)"><span>Registered ${fd(c.created)}</span><span>Due ${fd(c.due)}</span></div></div>
+    <div class="row g-3 mb-3" style="font-size:.86rem">
+      <div class="col-6"><div style="${LBL}">Institution</div><div style="font-weight:600">${esc(c.instName)}</div><div style="color:var(--mut);font-size:.78rem">${esc(c.instId)} · ${esc(c.state)}</div></div>
+      <div class="col-6"><div style="${LBL}">Category</div><div style="font-weight:600">${esc(c.category)}</div></div>
+      <div class="col-6"><div style="${LBL}">Complainant</div><div style="font-weight:600">${esc(c.complainant)}</div><div style="color:var(--mut);font-size:.78rem">${esc(c.email)}</div></div>
+      <div class="col-6"><div style="${LBL}">Phone</div><div style="font-weight:600">+91 ${esc(c.phone)}</div></div></div>
+    <div style="${LBL}">Description</div><p style="font-size:.88rem;background:var(--soft);padding:.9rem;border-radius:12px;border:1px solid var(--bd);margin-top:.4rem">${esc(c.description)}</p>
+    ${canEdit?`<div style="${CARD};padding:1rem;margin:1.2rem 0"><div style="font-weight:700;margin-bottom:.8rem"><i class="bi bi-sliders me-1"></i>Take Action</div>
+      <div class="row g-2"><div class="col-6"><label style="${LBL}">Update status</label><select id="as" class="form-select mt-1">${STATUSES.map(s=>`<option ${s===c.status?'selected':''}>${s}</option>`).join('')}</select></div>
+      <div class="col-6"><label style="${LBL}">Forward to</label><select id="ab" class="form-select mt-1">${BUREAUS.map(b=>`<option value="${b.id}" ${b.id===c.bureau?'selected':''}>${b.name}</option>`).join('')}</select></div>
+      <div class="col-12"><label style="${LBL}">Remark</label><textarea id="ar" rows="2" class="form-control mt-1" placeholder="Add an action-taken note…"></textarea></div>
+      <div class="col-12"><button id="au" class="btn text-white w-100" style="background:linear-gradient(135deg,var(--pri),var(--pri2));border:0;border-radius:12px;font-weight:700">Save update</button></div></div></div>`
+      :`<div class="alert alert-secondary my-3" style="border-radius:12px;font-size:.85rem"><i class="bi bi-lock-fill me-1"></i>Read-only: this case belongs to another bureau.</div>`}
+    <div style="font-weight:700;margin:1rem 0 .8rem"><i class="bi bi-clock-history me-1"></i>Case Timeline</div>
+    <div style="position:relative;padding-left:1.4rem;border-left:2px solid var(--bd);margin-left:.4rem">${[...c.timeline].reverse().map((e,i)=>`<div style="position:relative;margin-bottom:1.1rem"><span style="position:absolute;left:-1.95rem;top:.15rem;width:14px;height:14px;border-radius:50%;background:${i===0?'var(--pri)':'var(--card)'};border:3px solid var(--pri)"></span>
+      <div style="font-weight:600;font-size:.88rem">${esc(e.action)}</div><div style="font-size:.78rem;color:var(--mut)">${esc(e.note)}</div><div style="font-size:.72rem;color:var(--mut)">${esc(e.by)} · ${fdt(e.t)}</div></div>`).join('')}</div>
+  </div>`;
+  oc.show();
+  const au=$('#au');if(au)au.onclick=async()=>{au.disabled=true;au.innerHTML='<span class="spinner-border spinner-border-sm me-2"></span>Saving…';
+    await API.update(c.id,{status:$('#as').value,bureau:$('#ab').value,remark:$('#ar').value.trim()},user);toast('Case <b>'+c.id.split('/').pop()+'</b> updated','success');
+    const still=user.role==='Super Admin'||user.bureau===$('#ab').value;oc.hide();if(!still)toast('Case forwarded to '+bu($('#ab').value).name,'info');setTimeout(()=>drawShell(),250);};
+}
+
+/* ============================================================
+   10. REGISTER COMPLAINT
+   ============================================================ */
+function vReg(){
+  $('#view').innerHTML=pageHead('Register a Complaint','Smart routing assigns the right bureau and SLA the moment you submit')+`
+  <div class="row g-3 fu"><div class="col-lg-8"><form id="rf" novalidate style="${CARD};padding:1.6rem" class="needs-validation"><div class="row g-3">
+    <div class="col-md-6"><label style="${LBL}">Complainant name *</label><input id="rn" class="form-control mt-1" required minlength="3" placeholder="Full name"><div class="invalid-feedback">Enter a valid name</div></div>
+    <div class="col-md-6"><label style="${LBL}">Email *</label><input id="re" type="email" class="form-control mt-1" required placeholder="you@example.com"><div class="invalid-feedback">Enter a valid email</div></div>
+    <div class="col-md-6"><label style="${LBL}">Mobile (10 digits) *</label><input id="rp" class="form-control mt-1" required pattern="[6-9][0-9]{9}" placeholder="9876543210"><div class="invalid-feedback">Enter a valid Indian mobile number</div></div>
+    <div class="col-md-6"><label style="${LBL}">Institution *</label><select id="ri" class="form-select mt-1" required><option value="">Select institution…</option>${INST.map(i=>`<option value="${i.id}">${i.name} (${i.state})</option>`).join('')}</select><div class="invalid-feedback">Select an institution</div></div>
+    <div class="col-md-6"><label style="${LBL}">Category *</label><select id="rc" class="form-select mt-1" required><option value="">Select category…</option>${CATS.map(c=>`<option>${c.n}</option>`).join('')}</select><div class="invalid-feedback">Select a category</div></div>
+    <div class="col-md-6"><label style="${LBL}">Priority *</label><select id="rr" class="form-select mt-1" required><option value="">Select priority…</option>${Object.keys(SLA).map(p=>`<option>${p}</option>`).join('')}</select><div class="invalid-feedback">Select a priority</div></div>
+    <div class="col-12"><label style="${LBL}">Subject *</label><input id="rs" class="form-control mt-1" required minlength="8" placeholder="Short summary of the issue"><div class="invalid-feedback">Minimum 8 characters</div></div>
+    <div class="col-12"><label style="${LBL}">Description * <span id="cc" style="text-transform:none;font-weight:500">(0/30 min)</span></label><textarea id="rd" rows="4" class="form-control mt-1" required minlength="30" placeholder="Describe the complaint in detail…"></textarea><div class="invalid-feedback">Please write at least 30 characters</div></div>
+    <div class="col-12"><label style="${LBL}">Supporting document (optional)</label><input type="file" class="form-control mt-1" accept=".pdf,.jpg,.png"></div>
+    <div class="col-12"><button class="btn btn-lg text-white" id="rb" style="background:linear-gradient(135deg,var(--pri),var(--pri2));border:0;border-radius:12px;font-weight:700;padding:.75rem 2rem"><i class="bi bi-send-fill me-2"></i>Submit complaint</button></div></div></form></div>
+    <div class="col-lg-4"><div style="${CARD};padding:1.4rem;position:sticky;top:90px"><div style="font-weight:700;margin-bottom:1rem"><i class="bi bi-magic me-1" style="color:var(--pri)"></i>Smart Routing Preview</div><div id="pv" style="color:var(--mut);font-size:.88rem">Choose a category and priority to preview the assigned bureau and resolution deadline.</div></div></div></div>`;
+  const pv=()=>{const c=CATS.find(x=>x.n===$('#rc').value),p=$('#rr').value;if(!c||!p)return;const b=bu(c.b);
+    $('#pv').innerHTML=`<div style="padding:1rem;border-radius:14px;background:${b.color}14;border:1px solid ${b.color}40;margin-bottom:.8rem"><div style="font-size:.74rem;color:var(--mut)">Will be routed to</div><div style="font-weight:800;color:${b.color};font-size:1.05rem"><i class="bi ${b.icon} me-1"></i>${b.name}</div></div>
+      <div class="d-flex justify-content-between mb-2"><span>Priority</span>${badge(p,PC[p])}</div><div class="d-flex justify-content-between mb-2"><span>Resolution SLA</span><b style="color:var(--tx)">${SLA[p]} days</b></div>
+      <div class="d-flex justify-content-between"><span>Expected by</span><b style="color:var(--tx)">${fd(Date.now()+SLA[p]*DAY)}</b></div>`;};
+  $('#rc').onchange=pv;$('#rr').onchange=pv;$('#rd').oninput=e=>$('#cc').textContent='('+e.target.value.length+'/30 min)';
+  $('#rf').onsubmit=async e=>{e.preventDefault();const f=e.target;f.classList.add('was-validated');if(!f.checkValidity())return;
+    const b=$('#rb');b.disabled=true;b.innerHTML='<span class="spinner-border spinner-border-sm me-2"></span>Submitting…';
+    const c=await API.create({name:$('#rn').value,email:$('#re').value,phone:$('#rp').value,instId:$('#ri').value,category:$('#rc').value,priority:$('#rr').value,subject:$('#rs').value,description:$('#rd').value},user);
+    toast('Complaint registered · ID <b>'+c.id+'</b>');F.status='';F.bureau='';F.q='';go('cases',{sort:'created',dir:-1});setTimeout(()=>openCase(c.id),400);};
+}
+
+/* ============================================================
+   11. BUREAUS, INSTITUTIONS, REPORTS, TRACK, AUDIT
+   ============================================================ */
+async function vBur(){
+  $('#view').innerHTML=spinner;const cs=await API.cases(user);
+  $('#view').innerHTML=pageHead('Bureaus & Cells','Performance and pending workload across AICTE departments')+`<div class="row g-3">${BUREAUS.filter(b=>!user.bureau||b.id===user.bureau).map((b,i)=>{
+    const m=cs.filter(c=>c.bureau===b.id),o=m.filter(isOpen),ov=m.filter(isOver),rate=m.length?Math.round((m.length-o.length)/m.length*100):0;
+    return `<div class="col-md-6 col-xl-4 fu" style="animation-delay:${i*60}ms"><div class="hv bc" data-b="${b.id}" style="${CARD};padding:1.4rem;cursor:pointer;height:100%">
+      <div class="d-flex align-items-center gap-3 mb-3"><div style="width:50px;height:50px;border-radius:14px;background:${b.color}1f;color:${b.color};display:grid;place-items:center;font-size:1.5rem"><i class="bi ${b.icon}"></i></div>
+        <div><div style="font-weight:800">${b.name}</div><div style="font-size:.78rem;color:var(--mut)">${m.length} total cases</div></div></div>
+      <div class="d-flex justify-content-between mb-1" style="font-size:.8rem"><span style="color:var(--mut)">Resolution rate</span><b>${rate}%</b></div>
+      <div style="height:8px;background:var(--bd);border-radius:99px;overflow:hidden;margin-bottom:1rem"><div style="width:${rate}%;height:100%;background:${b.color};border-radius:99px"></div></div>
+      <div class="row text-center g-2"><div class="col-4"><div style="font-size:1.3rem;font-weight:800">${o.length}</div><div style="font-size:.7rem;color:var(--mut)">Open</div></div>
+      <div class="col-4"><div style="font-size:1.3rem;font-weight:800;color:${ov.length?'#ef4444':'inherit'}">${ov.length}</div><div style="font-size:.7rem;color:var(--mut)">Overdue</div></div>
+      <div class="col-4"><div style="font-size:1.3rem;font-weight:800">${avgDays(m).toFixed(1)}d</div><div style="font-size:.7rem;color:var(--mut)">Avg. time</div></div></div></div></div>`;}).join('')}</div>`;
+  document.querySelectorAll('.bc').forEach(el=>el.onclick=()=>go('cases',{bureau:el.dataset.b,status:'',q:'',priority:'',inst:'',page:1}));
+}
+async function vInst(){
+  $('#view').innerHTML=spinner;const cs=await API.cases(user);
+  const rows=INST.map(i=>{const m=cs.filter(c=>c.instId===i.id),o=m.filter(isOpen).length,ov=m.filter(isOver).length,cr=m.filter(c=>c.priority==='Critical').length;
+    const score=o*2+ov*3+cr*2+m.length;return {...i,total:m.length,open:o,over:ov,cr,score};}).filter(r=>r.total).sort((a,b)=>b.score-a.score);
+  const lvl=s=>s>=30?['High Risk','#ef4444']:s>=16?['Medium','#f59e0b']:['Low','#10b981'];
+  $('#view').innerHTML=pageHead('Institution Risk Watchlist','Repeat-complaint analysis — risk score = open×2 + overdue×3 + critical×2 + total')+`
+  <div style="${CARD};overflow:hidden" class="fu"><div class="table-responsive"><table class="table align-middle mb-0" style="font-size:.86rem"><thead style="background:var(--soft)"><tr>${['Institution','State','Total','Open','Overdue','Critical','Risk score',''].map(h=>`<th style="${LBL};padding:.9rem 1rem">${h}</th>`).join('')}</tr></thead>
+  <tbody>${rows.map(r=>{const l=lvl(r.score);return `<tr class="rw ir" data-i="${r.id}"><td style="padding:.9rem 1rem"><div style="font-weight:700">${esc(r.name)}</div><div style="font-size:.72rem;color:var(--mut)">${r.id}</div></td><td>${esc(r.state)}</td><td><b>${r.total}</b></td><td>${r.open}</td>
+    <td style="color:${r.over?'#ef4444':'inherit'};font-weight:${r.over?700:400}">${r.over}</td><td>${r.cr}</td>
+    <td style="min-width:160px"><div class="d-flex align-items-center gap-2"><div style="flex:1;height:8px;background:var(--bd);border-radius:99px;overflow:hidden"><div style="width:${Math.min(100,r.score*2.2)}%;height:100%;background:${l[1]}"></div></div>${badge(l[0]+' · '+r.score,l[1])}</div></td><td><i class="bi bi-chevron-right" style="color:var(--mut)"></i></td></tr>`;}).join('')}</tbody></table></div></div>`;
+  document.querySelectorAll('.ir').forEach(el=>el.onclick=()=>go('cases',{inst:el.dataset.i,bureau:'',status:'',q:'',priority:'',page:1}));
+}
+async function vRep(){
+  $('#view').innerHTML=spinner;const cs=await API.cases(user);
+  const lbl=CATS.map(c=>c.n);
+  $('#view').innerHTML=pageHead('Reports & Analytics','Insights for policy decisions and monitoring',`<button class="btn" id="rx" style="border:1px solid var(--bd);color:var(--tx);border-radius:12px;font-weight:600"><i class="bi bi-file-earmark-spreadsheet me-1"></i>Download full report</button>`)+`
+  <div class="row g-3 mb-3 fu"><div class="col-lg-7"><div style="${CARD};padding:1.3rem"><div style="font-weight:700;margin-bottom:1rem">Complaints by Category</div><div style="height:340px"><canvas id="r1"></canvas></div></div></div>
+    <div class="col-lg-5"><div style="${CARD};padding:1.3rem"><div style="font-weight:700;margin-bottom:1rem">Priority Mix</div><div style="height:340px"><canvas id="r2"></canvas></div></div></div></div>
+  <div class="row g-3 fu"><div class="col-lg-6"><div style="${CARD};padding:1.3rem"><div style="font-weight:700;margin-bottom:1rem">Avg. Resolution Time by Bureau (days)</div><div style="height:300px"><canvas id="r3"></canvas></div></div></div>
+    <div class="col-lg-6"><div style="${CARD};padding:1.3rem"><div style="font-weight:700;margin-bottom:1rem">Top States by Complaints</div><div style="height:300px"><canvas id="r4"></canvas></div></div></div></div>`;
+  $('#rx').onclick=()=>exportCSV(cs);
+  mk('r1',{type:'bar',data:{labels:lbl.map(l=>l.length>22?l.slice(0,21)+'…':l),datasets:[{data:lbl.map(l=>cs.filter(c=>c.category===l).length),backgroundColor:'#6366f1',borderRadius:8}]},options:{indexAxis:'y',maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{color:'rgba(148,163,184,.15)'}},y:{grid:{display:false}}}}});
+  mk('r2',{type:'polarArea',data:{labels:Object.keys(PC),datasets:[{data:Object.keys(PC).map(p=>cs.filter(c=>c.priority===p).length),backgroundColor:Object.values(PC).map(c=>c+'cc')}]},options:{maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{usePointStyle:true,boxWidth:8}}}}});
+  const bl=BUREAUS.filter(b=>!user.bureau||b.id===user.bureau);
+  mk('r3',{type:'bar',data:{labels:bl.map(b=>b.id),datasets:[{data:bl.map(b=>+avgDays(cs.filter(c=>c.bureau===b.id)).toFixed(1)),backgroundColor:bl.map(b=>b.color),borderRadius:8}]},options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,grid:{color:'rgba(148,163,184,.15)'}},x:{grid:{display:false}}}}});
+  const st={};cs.forEach(c=>st[c.state]=(st[c.state]||0)+1);const top=Object.entries(st).sort((a,b)=>b[1]-a[1]).slice(0,7);
+  mk('r4',{type:'bar',data:{labels:top.map(t=>t[0]),datasets:[{data:top.map(t=>t[1]),backgroundColor:'#ec4899',borderRadius:8}]},options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,grid:{color:'rgba(148,163,184,.15)'}},x:{grid:{display:false}}}}});
+}
+function vTrack(){
+  $('#view').innerHTML=pageHead('Track a Complaint','Enter a case ID (e.g. AICTE/GRV/2026/00001) to see its live status')+`
+  <div style="${CARD};padding:1.6rem;max-width:760px" class="fu"><div class="d-flex gap-2"><input id="ti" class="form-control form-control-lg" style="border-radius:12px;font-size:.95rem" placeholder="AICTE/GRV/2026/00001" value="AICTE/GRV/2026/00001">
+    <button id="tg" class="btn btn-lg text-white" style="background:linear-gradient(135deg,var(--pri),var(--pri2));border:0;border-radius:12px;font-weight:700;white-space:nowrap">Track</button></div><div id="tr" class="mt-4"></div></div>`;
+  const run=async()=>{$('#tr').innerHTML='<div class="text-center py-4"><div class="spinner-border" style="color:var(--pri)"></div></div>';const c=await API.allCasesPublic($('#ti').value);
+    if(!c){$('#tr').innerHTML='<div class="alert alert-danger" style="border-radius:12px"><i class="bi bi-x-circle me-1"></i>No complaint found with this ID.</div>';return;}
+    const steps=['New','Assigned','In Progress','Resolved','Closed'],idx=Math.max(0,steps.indexOf(c.status==='Escalated'?'In Progress':c.status));
+    $('#tr').innerHTML=`<div class="d-flex justify-content-between flex-wrap gap-2 mb-3"><div><div style="font-weight:800">${esc(c.subject)}</div><div style="color:var(--mut);font-size:.84rem">${esc(c.id)} · ${esc(bu(c.bureau).name)}</div></div>${badge(c.status,SC[c.status])}</div>
+      <div class="d-flex justify-content-between position-relative my-4">${steps.map((s,i)=>`<div class="text-center" style="flex:1;position:relative"><div style="width:34px;height:34px;border-radius:50%;margin:0 auto;display:grid;place-items:center;background:${i<=idx?'var(--pri)':'var(--bd)'};color:${i<=idx?'#fff':'var(--mut)'};font-weight:700;font-size:.85rem;position:relative;z-index:1">${i<idx?'<i class="bi bi-check-lg"></i>':i+1}</div>
+        ${i<steps.length-1?`<div style="position:absolute;top:16px;left:50%;width:100%;height:3px;background:${i<idx?'var(--pri)':'var(--bd)'}"></div>`:''}<div style="font-size:.74rem;margin-top:.4rem;font-weight:${i===idx?700:500}">${s}</div></div>`).join('')}</div>
+      <div class="d-flex justify-content-between" style="font-size:.85rem"><span>SLA</span>${sla(c)}</div>
+      <hr style="border-color:var(--bd)"><div style="font-weight:700;margin-bottom:.6rem">Latest updates</div>${[...c.timeline].reverse().slice(0,4).map(e=>`<div style="font-size:.85rem;margin-bottom:.6rem"><b>${esc(e.action)}</b><div style="color:var(--mut);font-size:.76rem">${fdt(e.t)}</div></div>`).join('')}`;};
+  $('#tg').onclick=run;$('#ti').onkeydown=e=>{if(e.key==='Enter')run();};run();
+}
+async function vAudit(){
+  $('#view').innerHTML=spinner;const a=(await API.audit()).slice(0,40);
+  $('#view').innerHTML=pageHead('Audit Trail','Immutable log of every action taken in the system',`<button class="btn" id="rs" style="border:1px solid #ef444466;color:#ef4444;border-radius:12px;font-weight:600"><i class="bi bi-arrow-repeat me-1"></i>Reset demo data</button>`)+`
+  <div style="${CARD};overflow:hidden" class="fu"><div class="table-responsive"><table class="table mb-0" style="font-size:.85rem"><thead style="background:var(--soft)"><tr>${['Time','User','Action','Case'].map(h=>`<th style="${LBL};padding:.9rem 1rem">${h}</th>`).join('')}</tr></thead>
+  <tbody>${a.map(x=>`<tr><td style="padding:.8rem 1rem;white-space:nowrap">${fdt(x.t)}</td><td>${esc(x.user)}</td><td>${badge(x.action,'#6366f1')}</td><td style="color:var(--pri);font-weight:600">${esc(x.caseId)}</td></tr>`).join('')}</tbody></table></div></div>`;
+  $('#rs').onclick=async()=>{await API.reset();toast('Demo data reset','info');drawShell();};
+}
+
+/* ============================================================
+   12. BOOT
+   ============================================================ */
+(function(){const t=localStorage.getItem('theme')||'light';document.documentElement.dataset.theme=t;document.documentElement.dataset.bsTheme=t;
+  const s=sessionStorage.getItem('u');if(s){user=JSON.parse(s);drawShell();}else drawLogin();})();
+</script>
+</body>
+</html>
